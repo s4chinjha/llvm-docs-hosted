@@ -8,8 +8,8 @@ official documentation site, and every "after" link points at the converted
 page that this repository builds and publishes.
 
 * Preview of the libc++ release notes migration:
-  `https://<pages-host>/libcxx/index.html` (the URL becomes known when the
-  repository is published, see *Publishing* below)
+  <https://s4chinjha.github.io/llvm-docs-hosted/libcxx/index.html>
+* Root landing page: <https://s4chinjha.github.io/llvm-docs-hosted/>
 * Source of the conversion: `s4chinjha/llvm-project`, branch
   `libcxx-docs-md-convert`
 * Tracking issue for the whole migration:
@@ -129,7 +129,10 @@ anything; publishing is the job of the workflow.
 ## Publishing
 
 The workflow `.github/workflows/preview.yml` builds the site and publishes it
-with GitHub Pages:
+with GitHub Pages. Pages is enabled for this repository with
+`build_type: workflow`, so the deployment runs from GitHub Actions and the
+site is served from
+<https://s4chinjha.github.io/llvm-docs-hosted/>.
 
 * `actions/checkout` – the preview repository
 * `actions/setup-python` – Python 3.13
