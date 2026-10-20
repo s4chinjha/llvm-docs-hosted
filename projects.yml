@@ -1,0 +1,164 @@
+# Configuration for the LLVM documentation preview site.
+#
+# One entry per LLVM documentation project that can be previewed.
+#
+# Fields
+#   name                directory name under the site root (site/<name>/)
+#   title               human readable name shown on the landing pages
+#   enabled             false keeps the project out of every build
+#   source.repository   git repository the documentation is built from
+#   source.ref          branch, tag or commit SHA to build
+#   source.local_path   optional local checkout used instead of source.repository
+#                       (local testing only; the CI workflow ignores it)
+#   docs.path           sphinx source directory inside the source tree
+#   docs.python_path    directories added to PYTHONPATH for the build
+#   docs.extra_args     extra arguments passed to sphinx-build
+#   build.warnings_as_errors  fail the build on any sphinx warning
+#   build.output_subdir subdirectory of site/<name>/ that receives the HTML
+#   official_base_url   base URL of the official documentation site
+#   pages               table rows of the project landing page:
+#                         source   path of the converted document in the repo
+#                         official URL of the same page on the official site
+#                         after    path of the built page, relative to docs.path
+#
+# Adding a project: copy an existing entry, change the fields, verify that the
+# sphinx build succeeds for that project (the conf.py of every project is
+# different), then set enabled: true.
+
+version: 1
+
+site_dir: site
+
+projects:
+  - name: libcxx
+    title: libc++
+    enabled: true
+    source:
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: libcxx-docs-md-convert
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docs:
+      path: libcxx/docs
+      python_path: utils/docs
+      extra_args: []
+    build:
+      warnings_as_errors: true
+      output_subdir: after
+    official_base_url: https://libcxx.llvm.org
+    pages:
+      - source: libcxx/docs/ReleaseNotes.md
+        official: https://libcxx.llvm.org/ReleaseNotes.html
+        after: ReleaseNotes.html
+      - source: libcxx/docs/ReleaseNotes/20.md
+        official: https://libcxx.llvm.org/ReleaseNotes/20.html
+        after: ReleaseNotes/20.html
+      - source: libcxx/docs/ReleaseNotes/21.md
+        official: https://libcxx.llvm.org/ReleaseNotes/21.html
+        after: ReleaseNotes/21.html
+      - source: libcxx/docs/ReleaseNotes/22.md
+        official: https://libcxx.llvm.org/ReleaseNotes/22.html
+        after: ReleaseNotes/22.html
+      - source: libcxx/docs/ReleaseNotes/23.md
+        official: https://libcxx.llvm.org/ReleaseNotes/23.html
+        after: ReleaseNotes/23.html
+      - source: libcxx/docs/ReleaseNotes/24.md
+        official: https://libcxx.llvm.org/ReleaseNotes/24.html
+        after: ReleaseNotes/24.html
+
+  - name: libc
+    title: libc
+    enabled: false
+    source:
+      repository: https://github.com/llvm/llvm-project
+      ref: main
+    docs:
+      path: libc/docs
+      python_path: utils/docs
+      extra_args: []
+    build:
+      warnings_as_errors: false
+      output_subdir: after
+    official_base_url: https://libc.llvm.org
+    pages:
+      - source: libc/docs/gpu/index.md
+        official: https://libc.llvm.org/gpu/index.html
+        after: gpu/index.html
+      - source: libc/docs/headers/index.md
+        official: https://libc.llvm.org/headers/index.html
+        after: headers/index.html
+
+  - name: lldb
+    title: LLDB
+    enabled: false
+    source:
+      repository: https://github.com/llvm/llvm-project
+      ref: main
+    docs:
+      path: lldb/docs
+      python_path: utils/docs
+      extra_args: []
+    build:
+      warnings_as_errors: false
+      output_subdir: after
+    official_base_url: https://lldb.llvm.org
+    pages:
+      - source: lldb/docs/man/lldb.md
+        official: https://lldb.llvm.org/man/lldb.html
+        after: man/lldb.html
+      - source: lldb/docs/man/lldb-server.md
+        official: https://lldb.llvm.org/man/lldb-server.html
+        after: man/lldb-server.html
+
+  - name: llvm
+    title: LLVM
+    enabled: false
+    source:
+      repository: https://github.com/llvm/llvm-project
+      ref: main
+    docs:
+      path: llvm/docs
+      python_path: utils/docs
+      extra_args: []
+    build:
+      warnings_as_errors: false
+      output_subdir: after
+    official_base_url: https://llvm.org/docs
+    pages:
+      - source: llvm/docs/AMDGPUUsage.md
+        official: https://llvm.org/docs/AMDGPUUsage.html
+        after: AMDGPUUsage.html
+
+  - name: openmp
+    title: OpenMP
+    enabled: false
+    source:
+      repository: https://github.com/llvm/llvm-project
+      ref: main
+    docs:
+      path: openmp/docs
+      python_path: utils/docs
+      extra_args: []
+    build:
+      warnings_as_errors: false
+      output_subdir: after
+    official_base_url: https://openmp.llvm.org
+    pages: []
+
+  # Not part of the llvm-project monorepo: the CMake documentation lives in
+  # CMakeOrg/cmake and is published on cmake.org, so it needs a different
+  # source repository and a different official base URL.
+  - name: cmake
+    title: CMake
+    enabled: false
+    source:
+      repository: https://github.com/Kitware/CMake
+      ref: master
+    docs:
+      path: Help
+      python_path: ""
+      extra_args: []
+    build:
+      warnings_as_errors: false
+      output_subdir: after
+    official_base_url: ""
+    pages: []

@@ -1,0 +1,131 @@
+name: Build and publish documentation previews
+
+# Builds the converted documentation of the configured LLVM projects and
+# publishes it with GitHub Pages.
+#
+# Triggers:
+#   workflow_dispatch    rebuild one project from a chosen ref
+#   push                configuration or tooling changed on main
+#   schedule            poll the configured source branches
+#   repository_dispatch optional instant update from a source repository
+#
+# The build job only needs read access and never sees a deployment
+# credential; the deploy job uses the automatic GitHub token of this
+# repository and does not run any code from the source repository.
+
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project whose ref is overridden (other projects keep their configured ref)"
+        type: choice
+        default: libcxx
+        options:
+          - libcxx
+          - libc
+          - lldb
+          - llvm
+          - openmp
+          - cmake
+      ref:
+        description: "Branch, tag or commit SHA to build (empty: use the configured ref)"
+        type: string
+        default: ""
+      repository:
+        description: "Source repository to build from (empty: use the configured repository)"
+        type: string
+        default: ""
+  push:
+    branches:
+      - main
+    paths:
+      - "projects.yml"
+      - "tools/**"
+      - ".github/workflows/preview.yml"
+  schedule:
+    - cron: "23 */6 * * *"
+  repository_dispatch:
+    types:
+      - preview-update
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build previews
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+    steps:
+      - name: Check out the preview repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --requirement tools/requirements.txt
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Build the previews
+        env:
+          EVENT_PROJECT: ${{ github.event.client_payload.project || inputs.project || 'libcxx' }}
+          EVENT_REF: ${{ github.event.client_payload.ref || inputs.ref || '' }}
+          EVENT_REPOSITORY: ${{ github.event.client_payload.repository || inputs.repository || '' }}
+        run: |
+          set -euo pipefail
+          args=(--site-dir _site)
+          if [ -n "${EVENT_REF}" ]; then
+            args+=(--override "${EVENT_PROJECT}=${EVENT_REF}")
+          fi
+          if [ -n "${EVENT_REPOSITORY}" ]; then
+            args+=(--override-repository "${EVENT_PROJECT}=${EVENT_REPOSITORY}")
+          fi
+          python3 tools/build_site.py "${args[@]}"
+
+      - name: Validate the site
+        run: python3 tools/build_site.py --site-dir _site --validate-only
+
+      - name: Compare with the published site
+        id: compare
+        env:
+          PAGE_URL: ${{ steps.pages.outputs.page_url }}
+        run: |
+          set -euo pipefail
+          python3 tools/compare_state.py --new _site/state.json --published-url "${PAGE_URL}"
+
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: needs.build.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

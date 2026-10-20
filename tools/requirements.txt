@@ -1,0 +1,4 @@
+# Pinned so that a rebuild of the preview site is reproducible.
+sphinx==9.1.0
+myst-parser==5.1.0
+PyYAML==6.0.3
