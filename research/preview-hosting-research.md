@@ -90,7 +90,28 @@ no paid service, and no secret beyond the repository's own `GITHUB_TOKEN`.
 
 ---
 
-## 4. What this repository implements, and why
+## 4. Presentation compared with this site
+
+| | rnk | zeyi2 | this site |
+|---|---|---|---|
+| Landing page | one table with `Path`, `Before`, `After` for every changed page | a directory per migration, no shared before/after table | one table per project with the Markdown source, the before link, the after link, the pull requests and the built commit |
+| Before pages | copied into `/before/…` on the same host | not published | linked to the official documentation site, or to the original source in the repository when no page is published |
+| After pages | the whole rebuilt documentation tree under `/after/…` | the committed Sphinx output of the migration | only the converted documents, their assets and the pages they need |
+| URL of a page | `https://llvmdocs.staging.reidkleckner.dev/after/<path>` | `https://broken.life/llvm-staging/<migration>/<path>` | `https://s4chinjha.github.io/llvm-docs-hosted/<project>/after/<path>` |
+| Revision shown | no | no | the commit that was built, per project |
+
+Two differences are deliberate:
+
+* The before pages are **not** copied. The official documentation site keeps
+  them, and a copy would only age badly.
+* The after pages are **not** the whole documentation tree. rnk publishes
+  everything because his landing page compares whole subprojects; for a
+  reviewer of a single migration the interesting pages are the converted
+  ones. Links from a preview to the other pages of the same project are
+  rewritten to the official site, which keeps the preview small and every
+  link working.
+
+## 5. What this repository implements, and why
 
 This repository follows **zeyi2's model** (GitHub Pages, committed or
 CI-generated output, standard Pages actions), because it needs no server, no

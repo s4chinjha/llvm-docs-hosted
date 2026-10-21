@@ -4,27 +4,59 @@ Hosting for the rendered **after** pages of my LLVM documentation migrations
 (reStructuredText -> MyST Markdown).
 
 The original pages are not copied here. Every "before" link points at the
-official documentation site, and every "after" link points at the converted
-page that this repository builds and publishes.
+official documentation site (or at the original source in the repository when
+no page is published), and every "after" link points at the converted page
+that this repository builds and publishes.
 
-* Preview of the libc++ release notes migration:
-  <https://s4chinjha.github.io/llvm-docs-hosted/libcxx/index.html>
-* Root landing page: <https://s4chinjha.github.io/llvm-docs-hosted/>
-* Source of the conversion: `s4chinjha/llvm-project`, branch
-  `libcxx-docs-md-convert`
+* Live site: <https://s4chinjha.github.io/llvm-docs-hosted/>
+* Hosting repository: <https://github.com/s4chinjha/llvm-docs-hosted>
+* Source of the conversions: `s4chinjha/llvm-project`
 * Tracking issue for the whole migration:
   <https://github.com/llvm/llvm-project/issues/201242>
 
-## How the site is put together
+## How it works
+
+1. A pull request branch supplies the converted `.md` files.
+2. `tools/build_site.py` renders them into HTML with Sphinx and MyST, using
+   the real configuration of each LLVM documentation project.
+3. The script validates the generated pages, the assets and every link, and
+   refuses to publish an incomplete build.
+4. GitHub Actions publishes the validated output to GitHub Pages.
+5. Scheduled or manually triggered builds refresh the previews.
+
+## What is published
+
+Only the documents that a migration actually converted, plus the assets and
+the supporting pages they need:
+
+| Project | Converted documents | Before |
+|---|---|---|
+| [libc](https://s4chinjha.github.io/llvm-docs-hosted/libc/index.html) | `libc/utils/hdrgen/README.md`, `libc/utils/wctype_utils/README.md` | source in the repository |
+| [utils/docs fixtures](https://s4chinjha.github.io/llvm-docs-hosted/utils-docs/index.html) | `absolute_links_test/{index,markdown,rest}.md`, `ghlinks/test/{index,rest}.md` | none, test fixtures |
+| [libc++](https://s4chinjha.github.io/llvm-docs-hosted/libcxx/index.html) | `libcxx/docs/ReleaseNotes.md`, `libcxx/docs/ReleaseNotes/{20..24}.md` | <https://libcxx.llvm.org> |
+| [lldb](https://s4chinjha.github.io/llvm-docs-hosted/lldb/index.html) | `lldb/docs/man/lldb.md`, `lldb/docs/man/lldb-server.md` | <https://lldb.llvm.org> |
+| [openmp](https://s4chinjha.github.io/llvm-docs-hosted/openmp/index.html) | `openmp/tools/Modules/README.md` | source in the repository |
+| [cmake](https://s4chinjha.github.io/llvm-docs-hosted/cmake/index.html) | `cmake/README.md` | source in the repository |
+
+Each project page lists the Markdown source, the before link, the after link,
+the pull requests of the migration and the commit that was built.
+
+Links to other pages of the same project (the theme navigation, the index of
+the project) are rewritten to the official documentation site, so a preview
+stays small and no link breaks. Documents without a published counterpart,
+such as the Sphinx test fixtures, keep their local links and are published
+with the pages they need.
+
+## Directory layout
 
 ```text
 llvm_docs_hosted/
 ├── README.md                 this file
-├── projects.yml              configuration: one entry per LLVM docs project
+├── projects.yml              configuration: one entry per migration
 ├── research/
 │   └── preview-hosting-research.md   how rnk and zeyi2 host their previews
 ├── tools/
-│   ├── build_site.py         build + validate + write the landing pages
+│   ├── build_site.py         build, validate and write the landing pages
 │   ├── compare_state.py      skip a deployment when nothing changed
 │   ├── preview_lib.py        the shared implementation
 │   └── requirements.txt      pinned build dependencies
@@ -40,10 +72,11 @@ site/
 ├── state.json                build metadata: ref, commit, build time
 ├── libcxx/
 │   ├── index.html            before/after table for libc++
-│   └── after/                the converted sphinx output
+│   └── after/                the converted pages and their assets
 │       ├── ReleaseNotes.html
 │       ├── ReleaseNotes/{20,21,22,23,24}.html
 │       └── _static/…
+└── …
 ```
 
 All links in the generated pages are relative, so the site works unchanged at
@@ -51,40 +84,65 @@ any base path: a GitHub Pages project site, a user site, or a custom domain.
 
 ## Adding a project
 
-1. Add an entry to `projects.yml` (copy the `libcxx` entry):
+1. Add an entry to `projects.yml`. A project may have several *docsets*, one
+   for each Sphinx project that has to be built:
 
    ```yaml
    - name: myproject
      title: My Project
+     group: myproject
      enabled: false
+     prs:
+       rename: 12345
+       rewrite: 12346
      source:
-       repository: https://github.com/llvm/llvm-project
-       ref: main
-     docs:
-       path: myproject/docs
-       python_path: utils/docs
-       extra_args: []
-     build:
-       warnings_as_errors: false
-       output_subdir: after
-     official_base_url: https://example.org/docs
-     pages:
-       - source: myproject/docs/Page.md
-         official: https://example.org/docs/Page.html
-         after: Page.html
+       repository: https://github.com/s4chinjha/llvm-project
+       ref: 0123456789abcdef0123456789abcdef01234567   # the commit of the PR head
+       branch: my-branch
+     docsets:
+       - name: man
+         mode: sphinx            # a real sphinx project
+         path: myproject/docs
+         python_path: utils/docs
+         tags: []                # for example builder-man
+         output: ""              # subdirectory below <project>/after/
+         official_base_url: https://myproject.llvm.org
+         warnings_as_errors: false
+         pages:
+           - source: myproject/docs/Page.md
+             official: https://myproject.llvm.org/Page.html
+             after: Page.html
    ```
 
-2. Check that the project builds with the LLVM documentation configuration:
+   Use `mode: isolated` for Markdown files that have no Sphinx project of
+   their own, such as a README. The build script then creates a small
+   Sphinx project for them:
+
+   ```yaml
+       - name: readme
+         mode: isolated
+         files:
+           - myproject/README.md
+         python_path: utils/docs
+         output: ""
+         official_base_url: ""
+         pages:
+           - source: myproject/README.md
+             after: README.html
+             before_source: https://github.com/llvm/llvm-project/blob/main/myproject/README.rst
+   ```
+
+2. Check that the project builds with its own configuration:
 
    ```bash
    python3 tools/build_site.py --project myproject \
-       --override-repository myproject=https://github.com/llvm/llvm-project \
-       --override myproject=main
+       --override-repository myproject=https://github.com/s4chinjha/llvm-project \
+       --override myproject=<branch-or-sha>
    ```
 
    Every LLVM documentation project has its own `conf.py`, its own sphinx
    extensions and sometimes extra dependencies (`lldb/docs` needs the `furo`
-   theme and `sphinx_automodapi`, `openmp/docs` has its own theme), so a
+   theme and the `builder-man` tag, `openmp/docs` has its own theme), so a
    project that is added without being verified will usually fail to build.
    That is the intended behaviour: the build fails, nothing is published.
 
@@ -131,8 +189,7 @@ anything; publishing is the job of the workflow.
 The workflow `.github/workflows/preview.yml` builds the site and publishes it
 with GitHub Pages. Pages is enabled for this repository with
 `build_type: workflow`, so the deployment runs from GitHub Actions and the
-site is served from
-<https://s4chinjha.github.io/llvm-docs-hosted/>.
+site is served from <https://s4chinjha.github.io/llvm-docs-hosted/>.
 
 * `actions/checkout` – the preview repository
 * `actions/setup-python` – Python 3.13
@@ -150,7 +207,7 @@ branch cannot leak the deployment token.
 
 ### Triggers
 
-| Event | What happens |
+| Trigger | Effect |
 |---|---|
 | `workflow_dispatch` | rebuild with an explicit project, ref and/or repository |
 | `push` to `main` | rebuild after a change to `projects.yml`, `tools/` or the workflow |
@@ -230,8 +287,9 @@ site is enough; a custom domain can be added later in the repository settings.
 * the sphinx build must succeed; for projects with
   `warnings_as_errors: true` any warning fails the build (libc++ uses this)
 * every page listed in `pages` must exist in the output
-* `_static/` must exist and contain the theme and highlight assets
-* every relative link and asset referenced by a generated page must resolve
+* the assets of the published pages (`_static/`, `_images/`, …) are copied
+* every relative link of a published page must resolve, either to a
+  published page or to the official documentation site
 * the landing page must link to every generated page
 * the build runs in a fresh directory, so stale output from an earlier build
   can never be published

@@ -32,8 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from preview_lib import (  # noqa: E402
     Project,
-    build_project,
+    build_docset,
     load_config,
+    publish_docset,
     render_project_index,
     render_root_index,
     resolve_source,
@@ -154,7 +155,7 @@ def main() -> int:
             project = dataclasses.replace(project, ref=args.ref)
         if project.name in ref_overrides:
             project = dataclasses.replace(project, ref=ref_overrides[project.name])
-        print(f"==> {project.name}: building {project.docs_path} from {project.ref}")
+        print(f"==> {project.name}: building from {project.ref}")
 
         source_root = None
         staging = None
@@ -162,46 +163,85 @@ def main() -> int:
         try:
             source_root, sha = resolve_source(project)
 
+            after_dir = site_dir / project.name / "after"
             if args.skip_build:
-                target = site_dir / project.name / project.output_subdir
-                if not target.is_dir():
-                    raise RuntimeError(f"no existing build at {target}")
+                if not after_dir.is_dir():
+                    raise RuntimeError(f"no existing build at {after_dir}")
                 build_log = "(skipped, reusing existing output)"
+                published = {"published": [], "advertised": [], "supporting": []}
             else:
                 staging = Path(tempfile.mkdtemp(prefix=f"llvm-docs-build-{project.name}-"))
-                output = staging / project.output_subdir
-                log = build_project(project, source_root, output)
-                build_log = log.strip().splitlines()[-1] if log.strip() else "ok"
+                built = staging / "build"
+                for docset in project.docsets:
+                    print(f"    {docset.name}: sphinx build")
+                    # Every docset gets its own build directory, otherwise the
+                    # documents of one docset would overwrite the other.
+                    build_docset(docset, source_root, built / docset.name)
 
-                problems = validate_project(project, output)
+                # Publish only the converted documents and what they need.
+                target = staging / "site" / project.name
+                published = {"published": [], "advertised": [], "supporting": []}
+                for docset in project.docsets:
+                    print(f"    {docset.name}: publishing")
+                    result = publish_docset(
+                        docset,
+                        built / docset.name,
+                        target / "after" / docset.output
+                        if docset.output
+                        else target / "after",
+                    )
+                    prefix = f"{docset.output}/" if docset.output else ""
+                    published["published"].extend(
+                        f"{prefix}{name}" for name in result["published"]
+                    )
+                    published["advertised"].extend(
+                        f"{prefix}{name}" for name in result["advertised"]
+                    )
+                    published["supporting"].extend(
+                        f"{prefix}{name}"
+                        for name in result["supporting"]
+                        if name.endswith(".html")
+                    )
+                    for line in result["rewritten_links"]:
+                        published.setdefault("rewritten_links", []).append(line)
+
+                problems = validate_project(project, target)
                 if problems:
                     raise RuntimeError("\n".join(problems))
 
-                target = site_dir / project.name / project.output_subdir
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.rmtree(target, ignore_errors=True)
-                shutil.move(str(output), str(target))
+                after_dir = site_dir / project.name / "after"
+                after_dir.parent.mkdir(parents=True, exist_ok=True)
+                shutil.rmtree(after_dir, ignore_errors=True)
+                shutil.move(str(target / "after"), str(after_dir))
                 shutil.rmtree(staging, ignore_errors=True)
                 staging = None
+                build_log = f"{len(published['published'])} file(s) published"
 
-            render_project_index(project, site_dir / project.name)
             state["projects"][project.name] = {
                 "ref": configured_ref,
+                "branch": project.branch,
                 "sha": sha,
                 "repository": project.repository,
                 "built_at": utcnow(),
                 "status": "ok",
+                "prs": project.prs,
+                "published": sorted(published["published"]),
+                "advertised": sorted(published["advertised"]),
+                "supporting": sorted(published["supporting"]),
             }
+            render_project_index(project, site_dir / project.name, state)
             print(f"    {build_log}")
         except Exception as error:  # noqa: BLE001 - report and continue
             failures.append(f"{project.name}: {error}")
             print(f"    FAILED: {error}", file=sys.stderr)
             state["projects"][project.name] = {
                 "ref": configured_ref,
+                "branch": project.branch,
                 "sha": "",
                 "repository": project.repository,
                 "built_at": utcnow(),
                 "status": "failed",
+                "prs": project.prs,
             }
         finally:
             if staging is not None:

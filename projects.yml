@@ -1,164 +1,241 @@
 # Configuration for the LLVM documentation preview site.
 #
-# One entry per LLVM documentation project that can be previewed.
+# One entry per migration that is previewed. Every entry points at the final
+# state of a stacked rename + rewrite pair: the rewrite branch contains the
+# rename commit, so building it renders the converted Markdown.
 #
 # Fields
 #   name                directory name under the site root (site/<name>/)
 #   title               human readable name shown on the landing pages
+#   group               area the project belongs to, shown on the root page
 #   enabled             false keeps the project out of every build
+#   prs                 pull requests of the migration, shown on the landing page
 #   source.repository   git repository the documentation is built from
 #   source.ref          branch, tag or commit SHA to build
+#   source.branch       branch name of the pull request, shown on the landing page
 #   source.local_path   optional local checkout used instead of source.repository
 #                       (local testing only; the CI workflow ignores it)
-#   docs.path           sphinx source directory inside the source tree
-#   docs.python_path    directories added to PYTHONPATH for the build
-#   docs.extra_args     extra arguments passed to sphinx-build
-#   build.warnings_as_errors  fail the build on any sphinx warning
-#   build.output_subdir subdirectory of site/<name>/ that receives the HTML
-#   official_base_url   base URL of the official documentation site
-#   pages               table rows of the project landing page:
-#                         source   path of the converted document in the repo
-#                         official URL of the same page on the official site
-#                         after    path of the built page, relative to docs.path
+#   docsets             groups of documents that are built together
+#     name              name of the docset, used in the file names
+#     mode              "sphinx" for a real sphinx project, "isolated" for loose
+#                       Markdown files that have no sphinx project of their own
+#     path              sphinx source directory, relative to the repository root
+#     files             loose Markdown files, relative to the repository root
+#     python_path       directories added to PYTHONPATH for the build
+#     tags              sphinx tags, for example builder-man
+#     output            subdirectory below <project>/after/
+#     official_base_url base URL of the official documentation site; links to
+#                       other pages of the project are rewritten to it
+#     warnings_as_errors  fail the build on any sphinx warning
+#     pages             the converted documents of this migration
+#       source          path of the converted .md file in the repository
+#       after           path of the rendered page inside the docset output
+#       official        URL of the same page on the official documentation site
+#       before_source   URL of the original source, when no page is published
 #
 # Adding a project: copy an existing entry, change the fields, verify that the
 # sphinx build succeeds for that project (the conf.py of every project is
 # different), then set enabled: true.
 
-version: 1
+version: 2
 
 site_dir: site
 
 projects:
-  - name: libcxx
-    title: libc++
+  # ---------------------------------------------------------------- libc ----
+  - name: libc
+    title: libc utility READMEs
+    group: libc
     enabled: true
+    prs:
+      rename: 233817
+      rewrite: 233848
+    source:
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: 628c8107e9116351af8aa006741b4a4e34fe97e0
+      branch: users/s4chinjha/libc-md-rewrite
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docsets:
+      - name: readmes
+        mode: isolated
+        files:
+          - libc/utils/hdrgen/README.md
+          - libc/utils/wctype_utils/README.md
+        python_path: utils/docs
+        output: ""
+        official_base_url: ""
+        pages:
+          - source: libc/utils/hdrgen/README.md
+            after: utils/hdrgen/README.html
+            before_source: https://github.com/llvm/llvm-project/blob/main/libc/utils/hdrgen/README.rst
+          - source: libc/utils/wctype_utils/README.md
+            after: utils/wctype_utils/README.html
+            before_source: https://github.com/llvm/llvm-project/blob/main/libc/utils/wctype_utils/README.rst
+
+  # ----------------------------------------------------------- utils/docs ----
+  - name: utils-docs
+    title: utils/docs Sphinx test fixtures
+    group: utils/docs
+    enabled: true
+    prs:
+      rename: 233971
+      rewrite: 233973
+    source:
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: 25fff65b9fdfa583889c8803347be82bc78f4695
+      branch: utils-docs-md-convert
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docsets:
+      - name: absolute-links
+        mode: sphinx
+        path: utils/docs/llvm_sphinx/ext/absolute_links_test
+        python_path: utils/docs
+        output: absolute-links
+        official_base_url: ""
+        warnings_as_errors: false
+        pages:
+          - source: utils/docs/llvm_sphinx/ext/absolute_links_test/index.md
+            after: index.html
+          - source: utils/docs/llvm_sphinx/ext/absolute_links_test/markdown.md
+            after: markdown.html
+          - source: utils/docs/llvm_sphinx/ext/absolute_links_test/rest.md
+            after: rest.html
+      - name: ghlinks
+        mode: sphinx
+        path: utils/docs/llvm_sphinx/ext/ghlinks/test
+        python_path: utils/docs
+        output: ghlinks
+        official_base_url: ""
+        warnings_as_errors: false
+        pages:
+          - source: utils/docs/llvm_sphinx/ext/ghlinks/test/index.md
+            after: index.html
+          - source: utils/docs/llvm_sphinx/ext/ghlinks/test/rest.md
+            after: rest.html
+
+  # -------------------------------------------------------------- libc++ ----
+  - name: libcxx
+    title: libc++ release notes
+    group: libc++
+    enabled: true
+    prs:
+      rename: 233994
+    note: >-
+      The rewrite pull request of this stack is not open yet. The preview is
+      built from the branch libcxx-docs-md-convert of the fork, which contains
+      the rename commit and the converted content.
     source:
       repository: https://github.com/s4chinjha/llvm-project
       ref: libcxx-docs-md-convert
+      branch: libcxx-docs-md-convert
       local_path: /home/sachinkrjha/oss_contribute/llvm-project
-    docs:
-      path: libcxx/docs
-      python_path: utils/docs
-      extra_args: []
-    build:
-      warnings_as_errors: true
-      output_subdir: after
-    official_base_url: https://libcxx.llvm.org
-    pages:
-      - source: libcxx/docs/ReleaseNotes.md
-        official: https://libcxx.llvm.org/ReleaseNotes.html
-        after: ReleaseNotes.html
-      - source: libcxx/docs/ReleaseNotes/20.md
-        official: https://libcxx.llvm.org/ReleaseNotes/20.html
-        after: ReleaseNotes/20.html
-      - source: libcxx/docs/ReleaseNotes/21.md
-        official: https://libcxx.llvm.org/ReleaseNotes/21.html
-        after: ReleaseNotes/21.html
-      - source: libcxx/docs/ReleaseNotes/22.md
-        official: https://libcxx.llvm.org/ReleaseNotes/22.html
-        after: ReleaseNotes/22.html
-      - source: libcxx/docs/ReleaseNotes/23.md
-        official: https://libcxx.llvm.org/ReleaseNotes/23.html
-        after: ReleaseNotes/23.html
-      - source: libcxx/docs/ReleaseNotes/24.md
-        official: https://libcxx.llvm.org/ReleaseNotes/24.html
-        after: ReleaseNotes/24.html
+    docsets:
+      - name: release-notes
+        mode: sphinx
+        path: libcxx/docs
+        python_path: utils/docs
+        output: ""
+        official_base_url: https://libcxx.llvm.org
+        warnings_as_errors: true
+        pages:
+          - source: libcxx/docs/ReleaseNotes.md
+            official: https://libcxx.llvm.org/ReleaseNotes.html
+            after: ReleaseNotes.html
+          - source: libcxx/docs/ReleaseNotes/20.md
+            official: https://libcxx.llvm.org/ReleaseNotes/20.html
+            after: ReleaseNotes/20.html
+          - source: libcxx/docs/ReleaseNotes/21.md
+            official: https://libcxx.llvm.org/ReleaseNotes/21.html
+            after: ReleaseNotes/21.html
+          - source: libcxx/docs/ReleaseNotes/22.md
+            official: https://libcxx.llvm.org/ReleaseNotes/22.html
+            after: ReleaseNotes/22.html
+          - source: libcxx/docs/ReleaseNotes/23.md
+            official: https://libcxx.llvm.org/ReleaseNotes/23.html
+            after: ReleaseNotes/23.html
+          - source: libcxx/docs/ReleaseNotes/24.md
+            official: https://libcxx.llvm.org/ReleaseNotes/24.html
+            after: ReleaseNotes/24.html
 
-  - name: libc
-    title: libc
-    enabled: false
-    source:
-      repository: https://github.com/llvm/llvm-project
-      ref: main
-    docs:
-      path: libc/docs
-      python_path: utils/docs
-      extra_args: []
-    build:
-      warnings_as_errors: false
-      output_subdir: after
-    official_base_url: https://libc.llvm.org
-    pages:
-      - source: libc/docs/gpu/index.md
-        official: https://libc.llvm.org/gpu/index.html
-        after: gpu/index.html
-      - source: libc/docs/headers/index.md
-        official: https://libc.llvm.org/headers/index.html
-        after: headers/index.html
-
+  # ---------------------------------------------------------------- lldb ----
   - name: lldb
-    title: LLDB
-    enabled: false
+    title: LLDB manual pages
+    group: lldb
+    enabled: true
+    prs:
+      rename: 234015
+      rewrite: 234016
     source:
-      repository: https://github.com/llvm/llvm-project
-      ref: main
-    docs:
-      path: lldb/docs
-      python_path: utils/docs
-      extra_args: []
-    build:
-      warnings_as_errors: false
-      output_subdir: after
-    official_base_url: https://lldb.llvm.org
-    pages:
-      - source: lldb/docs/man/lldb.md
-        official: https://lldb.llvm.org/man/lldb.html
-        after: man/lldb.html
-      - source: lldb/docs/man/lldb-server.md
-        official: https://lldb.llvm.org/man/lldb-server.html
-        after: man/lldb-server.html
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: 95bc7a5e79b21f5bd2a901efc69bb14acfb53494
+      branch: llvm-docs-rewrite-lldb
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docsets:
+      - name: man
+        mode: sphinx
+        path: lldb/docs
+        python_path: utils/docs
+        tags:
+          - builder-man
+        output: ""
+        official_base_url: https://lldb.llvm.org
+        warnings_as_errors: false
+        pages:
+          - source: lldb/docs/man/lldb.md
+            official: https://lldb.llvm.org/man/lldb.html
+            after: man/lldb.html
+          - source: lldb/docs/man/lldb-server.md
+            official: https://lldb.llvm.org/man/lldb-server.html
+            after: man/lldb-server.html
 
-  - name: llvm
-    title: LLVM
-    enabled: false
-    source:
-      repository: https://github.com/llvm/llvm-project
-      ref: main
-    docs:
-      path: llvm/docs
-      python_path: utils/docs
-      extra_args: []
-    build:
-      warnings_as_errors: false
-      output_subdir: after
-    official_base_url: https://llvm.org/docs
-    pages:
-      - source: llvm/docs/AMDGPUUsage.md
-        official: https://llvm.org/docs/AMDGPUUsage.html
-        after: AMDGPUUsage.html
-
+  # -------------------------------------------------------------- openmp ----
   - name: openmp
-    title: OpenMP
-    enabled: false
+    title: OpenMP CMake modules README
+    group: openmp
+    enabled: true
+    prs:
+      rename: 234018
+      rewrite: 234020
     source:
-      repository: https://github.com/llvm/llvm-project
-      ref: main
-    docs:
-      path: openmp/docs
-      python_path: utils/docs
-      extra_args: []
-    build:
-      warnings_as_errors: false
-      output_subdir: after
-    official_base_url: https://openmp.llvm.org
-    pages: []
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: 366fa557b3a4557a6c1515dd75a1eaf92bd4d523
+      branch: llvm-docs-rewrite-openmp
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docsets:
+      - name: readme
+        mode: isolated
+        files:
+          - openmp/tools/Modules/README.md
+        python_path: utils/docs
+        output: ""
+        official_base_url: ""
+        pages:
+          - source: openmp/tools/Modules/README.md
+            after: tools/Modules/README.html
+            before_source: https://github.com/llvm/llvm-project/blob/main/openmp/tools/Modules/README.rst
 
-  # Not part of the llvm-project monorepo: the CMake documentation lives in
-  # CMakeOrg/cmake and is published on cmake.org, so it needs a different
-  # source repository and a different official base URL.
+  # --------------------------------------------------------------- cmake ----
   - name: cmake
-    title: CMake
-    enabled: false
+    title: CMake common utils README
+    group: cmake
+    enabled: true
+    prs:
+      rename: 234023
+      rewrite: 234025
     source:
-      repository: https://github.com/Kitware/CMake
-      ref: master
-    docs:
-      path: Help
-      python_path: ""
-      extra_args: []
-    build:
-      warnings_as_errors: false
-      output_subdir: after
-    official_base_url: ""
-    pages: []
+      repository: https://github.com/s4chinjha/llvm-project
+      ref: 12d023861617db372c6dc4bfeb9eec8f9950f50b
+      branch: llvm-docs-rewrite-cmake
+      local_path: /home/sachinkrjha/oss_contribute/llvm-project
+    docsets:
+      - name: readme
+        mode: isolated
+        files:
+          - cmake/README.md
+        python_path: utils/docs
+        output: ""
+        official_base_url: ""
+        pages:
+          - source: cmake/README.md
+            after: README.html
+            before_source: https://github.com/llvm/llvm-project/blob/main/cmake/README.rst
