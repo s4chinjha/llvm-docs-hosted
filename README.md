@@ -29,17 +29,22 @@ that this repository builds and publishes.
 Only the documents that a migration actually converted, plus the assets and
 the supporting pages they need:
 
-| Project | Converted documents | Before |
-|---|---|---|
-| [libc](https://s4chinjha.github.io/llvm-docs-hosted/libc/index.html) | `libc/utils/hdrgen/README.md`, `libc/utils/wctype_utils/README.md` | source in the repository |
-| [utils/docs fixtures](https://s4chinjha.github.io/llvm-docs-hosted/utils-docs/index.html) | `absolute_links_test/{index,markdown,rest}.md`, `ghlinks/test/{index,rest}.md` | none, test fixtures |
-| [libc++](https://s4chinjha.github.io/llvm-docs-hosted/libcxx/index.html) | `libcxx/docs/ReleaseNotes.md`, `libcxx/docs/ReleaseNotes/{20..24}.md` | <https://libcxx.llvm.org> |
-| [lldb](https://s4chinjha.github.io/llvm-docs-hosted/lldb/index.html) | `lldb/docs/man/lldb.md`, `lldb/docs/man/lldb-server.md` | <https://lldb.llvm.org> |
-| [openmp](https://s4chinjha.github.io/llvm-docs-hosted/openmp/index.html) | `openmp/tools/Modules/README.md` | source in the repository |
-| [cmake](https://s4chinjha.github.io/llvm-docs-hosted/cmake/index.html) | `cmake/README.md` | source in the repository |
+| Project | Converted documents | Published before page | In the comparison |
+|---|---|---|---|
+| libc | `libc/utils/hdrgen/README.md`, `libc/utils/wctype_utils/README.md` | none, repository README | no |
+| utils/docs fixtures | `absolute_links_test/{index,markdown,rest}.md`, `ghlinks/test/{index,rest}.md` | none, test fixtures | no |
+| libc++ | `libcxx/docs/ReleaseNotes.md`, `libcxx/docs/ReleaseNotes/{20..24}.md` | <https://libcxx.llvm.org> | **yes** |
+| lldb | `lldb/docs/man/lldb.md`, `lldb/docs/man/lldb-server.md` | <https://lldb.llvm.org> | **yes** |
+| openmp | `openmp/tools/Modules/README.md` | none, repository README | no |
+| cmake | `cmake/README.md` | none, repository README | no |
 
-Each project page lists the Markdown source, the before link, the after link,
-the pull requests of the migration and the commit that was built.
+The landing page is a minimal before/after comparison, in the style of the
+[rnk preview site](https://llvmdocs.staging.reidkleckner.dev/): one table per
+project with the columns `Path`, `Before` and `After`. A document appears only
+when its original version has a published HTML page on the official
+documentation site **and** its converted version has been generated; READMEs,
+test fixtures and templates have no published counterpart and are therefore not
+listed. Projects without a single pair do not get a section at all.
 
 Links to other pages of the same project (the theme navigation, the index of
 the project) are rewritten to the official documentation site, so a preview
@@ -68,7 +73,7 @@ The generated site looks like this:
 
 ```text
 site/
-├── index.html                landing page listing every project
+├── index.html                landing page: one before/after table per project
 ├── state.json                build metadata: ref, commit, build time
 ├── libcxx/
 │   ├── index.html            before/after table for libc++
@@ -76,8 +81,18 @@ site/
 │       ├── ReleaseNotes.html
 │       ├── ReleaseNotes/{20,21,22,23,24}.html
 │       └── _static/…
+├── lldb/
+│   ├── index.html            before/after table for lldb
+│   └── after/
+│       ├── man/lldb.html
+│       ├── man/lldb-server.html
+│       └── _static/…
 └── …
 ```
+
+Only projects with at least one before/after pair get a landing page; the
+pages of the other projects are still built and published, they are just not
+part of the comparison.
 
 All links in the generated pages are relative, so the site works unchanged at
 any base path: a GitHub Pages project site, a user site, or a custom domain.

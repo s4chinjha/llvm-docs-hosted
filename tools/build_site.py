@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import shutil
 import sys
 import tempfile
@@ -33,6 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from preview_lib import (  # noqa: E402
     Project,
     build_docset,
+    eligible_rows,
     load_config,
     publish_docset,
     render_project_index,
@@ -132,7 +134,11 @@ def main() -> int:
             for project in config.projects
             if (site_dir / project.name).is_dir()
         ]
-        problems = validate_site(site_dir, present)
+        state_path = site_dir / "state.json"
+        state = {}
+        if state_path.is_file():
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        problems = validate_site(site_dir, present, state)
         for problem in problems:
             print(f"error: {problem}", file=sys.stderr)
         if problems:
@@ -229,8 +235,14 @@ def main() -> int:
                 "advertised": sorted(published["advertised"]),
                 "supporting": sorted(published["supporting"]),
             }
+            # The before/after pairs of this project: only documents that
+            # have a published original and a generated conversion.
+            rows = []
+            for docset in project.docsets:
+                rows.extend(eligible_rows(docset, after_dir / docset.output if docset.output else after_dir))
+            state["projects"][project.name]["rows"] = rows
             render_project_index(project, site_dir / project.name, state)
-            print(f"    {build_log}")
+            print(f"    {build_log} ({len(rows)} before/after pair(s))")
         except Exception as error:  # noqa: BLE001 - report and continue
             failures.append(f"{project.name}: {error}")
             print(f"    FAILED: {error}", file=sys.stderr)
@@ -252,7 +264,7 @@ def main() -> int:
     render_root_index(selected, site_dir, state)
     write_state(site_dir, state)
 
-    problems = validate_site(site_dir, selected)
+    problems = validate_site(site_dir, selected, state)
     for problem in problems:
         print(f"error: {problem}", file=sys.stderr)
 

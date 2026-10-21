@@ -26,6 +26,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -603,7 +605,75 @@ def validate_project(project: Project, project_dir: Path) -> list[str]:
     return problems
 
 
-def validate_site(site_dir: Path, projects: list[Project]) -> list[str]:
+def verify_official_url(url: str, timeout: int = 30) -> str:
+    """Check that an official documentation page exists.
+
+    Returns "ok" when the page is available, "missing" when the server says
+    it does not exist, and "unknown" when the page could not be checked.
+    """
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "llvm-docs-preview"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return "ok" if 200 <= response.status < 400 else "missing"
+    except urllib.error.HTTPError as error:
+        return "missing" if error.code in (400, 401, 403, 404, 410) else "unknown"
+    except (urllib.error.URLError, OSError, TimeoutError):
+        return "unknown"
+
+
+def eligible_rows(
+    docset: Docset,
+    build_dir: Path,
+    check_urls: bool = True,
+) -> list[dict]:
+    """The documents that can be shown as a before/after pair.
+
+    A document qualifies only when its original version has a published HTML
+    page on the official documentation site and its converted version has
+    actually been generated.
+    """
+    rows: list[dict] = []
+    for page in docset.pages:
+        if not page.official:
+            # No published counterpart: READMEs, fixtures and templates are
+            # not part of the comparison.
+            continue
+        if not (build_dir / page.after).is_file():
+            continue
+        if check_urls:
+            status = verify_official_url(page.official)
+            if status == "missing":
+                print(
+                    f"warning: {page.official} does not exist, "
+                    f"skipping {page.source}",
+                    file=sys.stderr,
+                )
+                continue
+            if status == "unknown":
+                print(
+                    f"warning: could not check {page.official}, "
+                    f"keeping {page.source}",
+                    file=sys.stderr,
+                )
+        path = (
+            f"{docset.path}/{page.after}"
+            if docset.mode == "sphinx" and docset.path
+            else page.after
+        )
+        rows.append(
+            {
+                "path": path,
+                "official": page.official,
+                "after": page.after,
+                "output": docset.output,
+            }
+        )
+    return rows
+
+
+def validate_site(site_dir: Path, projects: list[Project], state: dict) -> list[str]:
     """Check the assembled site: landing pages, links and assets."""
     problems: list[str] = []
     index = site_dir / "index.html"
@@ -611,22 +681,37 @@ def validate_site(site_dir: Path, projects: list[Project]) -> list[str]:
         return [f"missing landing page {index}"]
 
     for project in projects:
+        rows = state.get("projects", {}).get(project.name, {}).get("rows", [])
         project_index = site_dir / project.name / "index.html"
+        if not rows:
+            # Without a before/after pair there is nothing to compare, so the
+            # project has no section on the site.
+            if project_index.is_file():
+                problems.append(
+                    f"{project.name}: landing page exists but the project has "
+                    "no before/after pairs"
+                )
+            continue
         if not project_index.is_file():
             problems.append(f"missing project landing page {project_index}")
             continue
         links = _collect_links(project_index)
-        for docset in project.docsets:
-            for page in docset.pages:
-                relative = f"after/{docset.output + '/' if docset.output else ''}{page.after}"
-                if relative not in links:
-                    problems.append(
-                        f"{project.name}: landing page does not link to {relative}"
-                    )
-                if not (site_dir / project.name / relative).is_file():
-                    problems.append(
-                        f"{project.name}: landing page links to missing {relative}"
-                    )
+        for row in rows:
+            relative = f"after/{row['output'] + '/' if row['output'] else ''}{row['after']}"
+            if relative not in links:
+                problems.append(
+                    f"{project.name}: landing page does not link to {relative}"
+                )
+            if not (site_dir / project.name / relative).is_file():
+                problems.append(
+                    f"{project.name}: landing page links to missing {relative}"
+                )
+        for row in rows:
+            if row["official"] not in links:
+                problems.append(
+                    f"{project.name}: landing page does not link to "
+                    f"{row['official']}"
+                )
 
     for html_file in sorted(site_dir.rglob("*.html")):
         for link in _collect_links(html_file):
@@ -650,7 +735,7 @@ _STYLE = """
 body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
        margin: 2.5rem auto; max-width: 68rem; padding: 0 1rem; color: #1b1f23; }
 h1 { font-size: 1.6rem; margin-bottom: .3rem; }
-p.lead { color: #57606a; margin-top: 0; }
+h2 { font-size: 1.2rem; margin: 2rem 0 .3rem; }
 table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; }
 th, td { border-bottom: 1px solid #d8dee4; padding: .45rem .7rem; text-align: left;
          vertical-align: top; }
@@ -658,144 +743,71 @@ th { background: #f6f8fa; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
        font-size: .9em; background: #f6f8fa; padding: .1rem .3rem; border-radius: 3px; }
 a { color: #0969da; }
-.note { background: #fff8c5; border-left: 4px solid #d4a72c; padding: .6rem .9rem;
-        margin: 1rem 0; }
-footer { margin-top: 2.5rem; color: #57606a; font-size: .9rem; }
 """
 
 
-def _pr_links(project: Project) -> str:
-    parts = []
-    for kind, number in project.prs.items():
-        label = f"{kind} PR #{number}"
-        url = f"https://github.com/llvm/llvm-project/pull/{number}"
-        parts.append(f'<a href="{url}">{label}</a>')
-    return ", ".join(parts)
-
-
-def render_project_index(project: Project, project_dir: Path, state: dict) -> Path:
-    """Write site/<project>/index.html with the before/after table."""
-    entry = state.get("projects", {}).get(project.name, {})
-    rows = []
-    for docset in project.docsets:
-        prefix = f"after/{docset.output}/" if docset.output else "after/"
-        for page in docset.pages:
-            after = f"{prefix}{page.after}"
-            if page.official:
-                before = f'<a href="{html.escape(page.official, quote=True)}">official</a>'
-            elif page.before_source:
-                before = (
-                    f'<a href="{html.escape(page.before_source, quote=True)}">'
-                    "source</a><br><small>no published page</small>"
-                )
-            else:
-                before = "<small>no published page</small>"
-            rows.append(
-                "<tr>"
-                f"<td><code>{html.escape(page.source)}</code></td>"
-                f"<td>{before}</td>"
-                f'<td><a href="{html.escape(after, quote=True)}">preview</a></td>'
-                "</tr>"
-            )
-
-    if rows:
-        table = (
-            "<table>\n<thead><tr><th>Markdown source</th><th>Before</th>"
-            "<th>After</th></tr></thead>\n<tbody>\n"
-            + "\n".join(rows)
-            + "\n</tbody>\n</table>"
+def _comparison_table(rows: list[dict], after_prefix: str) -> str:
+    """A minimal Path / Before / After table, like the rnk preview site."""
+    body = []
+    for row in rows:
+        after = f"{after_prefix}{row['output'] + '/' if row['output'] else ''}{row['after']}"
+        body.append(
+            "<tr>"
+            f"<td><code>{html.escape(row['path'])}</code></td>"
+            f'<td><a href="{html.escape(row["official"], quote=True)}">before</a></td>'
+            f'<td><a href="{html.escape(after, quote=True)}">after</a></td>'
+            "</tr>"
         )
-    else:
-        table = "<p>No converted documents are configured for this project yet.</p>"
-
-    prs = _pr_links(project)
-    pr_line = f"<p><strong>Pull requests:</strong> {prs}</p>" if prs else ""
-    revision = entry.get("sha", "")
-    revision_line = (
-        f"<p><strong>Source revision:</strong> "
-        f"<code>{html.escape(revision)}</code>"
-        + (
-            f" (branch <code>{html.escape(entry.get('branch', ''))}</code>)"
-            if entry.get("branch")
-            else ""
-        )
-        + "</p>"
-        if revision
-        else ""
+    return (
+        "<table>\n<thead><tr><th>Path</th><th>Before</th><th>After</th></tr>"
+        "</thead>\n<tbody>\n" + "\n".join(body) + "\n</tbody>\n</table>"
     )
 
-    notes = []
-    if project.note:
-        notes.append(f'<div class="note">{html.escape(project.note)}</div>')
-    for docset in project.docsets:
-        if docset.official_base_url:
-            continue
-        has_source = any(page.before_source for page in docset.pages)
-        if has_source:
-            notes.append(
-                f"<div class=\"note\"><strong>{html.escape(docset.name)}</strong>: "
-                "these documents have no published counterpart on the official "
-                "documentation site; the before column points at the original "
-                "source in the repository.</div>"
-            )
-        else:
-            notes.append(
-                f"<div class=\"note\"><strong>{html.escape(docset.name)}</strong>: "
-                "these documents are test fixtures and have no published "
-                "counterpart; they are rendered with the configuration of the "
-                "test itself.</div>"
-            )
+
+def render_project_index(project: Project, project_dir: Path, state: dict) -> Path | None:
+    """Write site/<project>/index.html with the before/after table.
+
+    Returns None when the project has no before/after pair; then no landing
+    page is written and a stale one is removed.
+    """
+    rows = state.get("projects", {}).get(project.name, {}).get("rows", [])
+    target = project_dir / "index.html"
+    if not rows:
+        if target.is_file():
+            target.unlink()
+        return None
 
     document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{html.escape(project.title)} documentation preview</title>
+<title>{html.escape(project.title)}</title>
 <style>{_STYLE}</style>
 </head>
 <body>
-<h1>{html.escape(project.title)} documentation preview</h1>
-<p class="lead">The converted Markdown of the migration, rendered with Sphinx and
-MyST. The <em>Before</em> column links to the original page on the official
-documentation site, the <em>After</em> column links to the rendered preview.</p>
-{pr_line}
-{revision_line}
-{"".join(notes)}
-{table}
-<footer>Generated by the preview workflow of the LLVM documentation preview site.</footer>
+<h1>{html.escape(project.title)}</h1>
+{_comparison_table(rows, "after/")}
 </body>
 </html>
 """
-    target = project_dir / "index.html"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(document, encoding="utf-8")
     return target
 
 
 def render_root_index(projects: list[Project], site_dir: Path, state: dict) -> Path:
-    """Write site/index.html listing every project with a preview."""
-    rows = []
+    """Write site/index.html with one before/after table per project."""
+    sections = []
     for project in projects:
-        entry = state.get("projects", {}).get(project.name, {})
-        rows.append(
-            "<tr>"
-            f'<td><a href="{html.escape(project.name, quote=True)}/index.html">'
-            f"{html.escape(project.title)}</a></td>"
-            f"<td>{html.escape(project.group)}</td>"
-            f"<td><code>{html.escape(entry.get('ref', ''))}</code></td>"
-            f"<td><code>{html.escape(entry.get('sha', '')[:12])}</code></td>"
-            f"<td>{html.escape(entry.get('built_at', ''))}</td>"
-            "</tr>"
+        rows = state.get("projects", {}).get(project.name, {}).get("rows", [])
+        if not rows:
+            continue
+        sections.append(
+            f'<h2><a href="{html.escape(project.name, quote=True)}/index.html">'
+            f"{html.escape(project.title)}</a></h2>\n"
+            + _comparison_table(rows, f"{project.name}/after/")
         )
-
-    table = (
-        "<table>\n<thead><tr><th>Project</th><th>Area</th><th>Source ref</th>"
-        "<th>Commit</th><th>Built</th></tr></thead>\n<tbody>\n"
-        + "\n".join(rows)
-        + "\n</tbody>\n</table>"
-    )
-
     document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -806,10 +818,7 @@ def render_root_index(projects: list[Project], site_dir: Path, state: dict) -> P
 </head>
 <body>
 <h1>LLVM documentation preview</h1>
-<p class="lead">Previews of documentation converted from reStructuredText to
-MyST Markdown. The original pages stay on the official documentation sites.</p>
-{table}
-<footer>Generated by the preview workflow of the LLVM documentation preview site.</footer>
+{"\n".join(sections)}
 </body>
 </html>
 """
